@@ -28,8 +28,8 @@ async function initCapture() {
         video: {
             deviceId: secondVideoDeviceId,
             audio: false,
-            width: 640,
-            height:480
+            width: 1280,
+            height:720
         }
     };
 
@@ -192,7 +192,7 @@ const s = (sketch) => {
         }
     };
 
-    sketch.getEyeBoundingTestBoxes = (id) => {
+    /*NOTINUSE*/sketch.getEyeBoundingTestBoxes = (id) => {
         let allEyeBoundingBoxes; // Stores bounding boxes for each socket
 
         let finalEyeBoundingBoxes;
@@ -233,7 +233,7 @@ const s = (sketch) => {
     };
 
 
-    sketch.calculateBoundingBox = (eye) => {
+    /*NOTINUSE*/sketch.calculateBoundingBox = (eye) => {
         const x1 = Math.min(eye.map(p => p._x));
         const y1 = Math.min(eye.map(p => p._y));
         const x2 = Math.max(eye.map(p => p._x));

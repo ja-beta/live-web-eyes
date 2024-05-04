@@ -28,14 +28,8 @@ async function initCapture() {
         video: {
             deviceId: secondVideoDeviceId,
             audio: false,
-            width: {
-                "min": 320,
-                "max": 1920
-            },
-            height: {
-                "min": 240,
-                "max": 1080
-            }
+            width: 640,
+            height:480
         }
     };
 
@@ -54,7 +48,6 @@ async function initCapture() {
         video.srcObject = stream;
         video.onloadedmetadata = function (e) {
             video.play();
-
         }
 
         setupSocket();
@@ -69,7 +62,7 @@ const s = (sketch) => {
     let previousPixels;
     let accumulatedImage;
     let thresholdSlider;
-    let timeout = 500;
+    let timeout = 50;
     let sliderInitial = 10;
 
     // let w = 320; //320
@@ -100,7 +93,7 @@ const s = (sketch) => {
         }
         accumulatedImage.updatePixels();
 
-        // setTimeout(sketch.resetImage, timeout);
+        setTimeout(sketch.resetImage, timeout);
     };
 
     sketch.initiateFaceApi = () => {
@@ -283,6 +276,7 @@ const s = (sketch) => {
         for (let socketId in videoElements) {
             if (socketId !== socket.id && detections.size > 0) {
                 let capture = videoElements[socketId];
+                console.log("capture.width: ", capture.width, "capture.height: ", capture.height);
                 capture.loadPixels();
 
                 //added - NEW
@@ -364,14 +358,14 @@ const s = (sketch) => {
                     }
                 }
 
-                console.log('eyeBoxes:', eyeBoxes);
-                if (eyeBoxes && eyeBoxes[0]) {
+                // console.log('eyeBoxes:', eyeBoxes);
+                // if (eyeBoxes && eyeBoxes[0]) {
 
-                    sketch.circle(eyeBoxes[0][0], eyeBoxes[0][1], 30);
-                    sketch.text(`Left Eye: (${eyeBoxes[0][0]}, ${eyeBoxes[0][1]})`, eyeBoxes[0][0], eyeBoxes[0][1]);
-                } else {
-                    sketch.circle(sketch.width / 2, sketch.height / 2, 30);
-                }
+                //     sketch.circle(eyeBoxes[0][0], eyeBoxes[0][1], 30);
+                //     sketch.text(`Left Eye: (${eyeBoxes[0][0]}, ${eyeBoxes[0][1]})`, eyeBoxes[0][0], eyeBoxes[0][1]);
+                // } else {
+                //     sketch.circle(sketch.width / 2, sketch.height / 2, 30);
+                // }
 
             }
         };
@@ -433,6 +427,8 @@ const s = (sketch) => {
             domElement.className = "domVideo";
             domElement.srcObject = stream;
             document.body.appendChild(domElement);
+            domElement.width = w;
+            domElement.height = h;
 
             let videoEl = new p5.MediaElement(domElement, sketch);
             // sketch._elements.push(videoEl);

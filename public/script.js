@@ -9,25 +9,56 @@ let savedTrace;
 let eyeCenterPointAnchor;
 
 let videoElements = {};
-
+let myp5
+let w;
+let h;
 
 window.addEventListener('load', function () {
     initCapture();
 })
 
 
-function initCapture() {
+async function initCapture() {
     console.log("init capture");
 
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const videoDevices = devices.filter(device => device.kind === 'videoinput');
+    const secondVideoDeviceId = videoDevices[0].deviceId;
+    const constraints = {
+        video: {
+            deviceId: secondVideoDeviceId,
+            audio: false,
+            width: {
+                "min": 320,
+                "max": 1920
+            },
+            height: {
+                "min": 240,
+                "max": 1080
+            }
+        }
+    };
+
     let video = document.getElementById('myVideo');
-    let constraints = { audio: false, video: true }
+    // console.log("video width: ", video.videoWidth, "video height: ", video.videoHeight);
+    // video.style.width = "1920px";
+    // video.style.height = "1080px";
     navigator.mediaDevices.getUserMedia(constraints).then(function (stream) {
+        w = stream.getVideoTracks()[0].getSettings().width;
+        console.log(stream.getVideoTracks()[0].getSettings().width);
+        h = stream.getVideoTracks()[0].getSettings().height;
+        console.log("getUserMedia length: " + navigator.mediaDevices.enumerateDevices);
+
         myStream = stream;
+        initp5();
         video.srcObject = stream;
         video.onloadedmetadata = function (e) {
             video.play();
+
         }
+
         setupSocket();
+
     })
         .catch(function (err) {
             alert(err);
@@ -38,24 +69,25 @@ const s = (sketch) => {
     let previousPixels;
     let accumulatedImage;
     let thresholdSlider;
-    let timeout = 50;
-    let sliderInitial = 25;
+    let timeout = 500;
+    let sliderInitial = 10;
 
-    let w = 320;
-    let h = 240;
+    // let w = 320; //320
+    // let h = 240; // 240
 
     let faceapis = new Map(); // Stores FaceAPI instances keyed by socket ID
     let detections = new Map(); // Stores detections keyed by socket ID
-    let scale = 1.5;
+    let scale;
 
     sketch.setup = () => {
-        // sketch.frameRate(24);
-        sketch.pixelDensity(1);
-        sketch.createCanvas(sketch.windowWidth, sketch.windowHeight);
+        // sketch.frameRate(12);
+        // sketch.pixelDensity(1);
+        sketch.createCanvas(w, h);
+        console.log(w, h);
         sketch.background(200);
 
-        console.log("width: " + w + " " + "height: " + h);
-
+        scale = Math.min(sketch.width / w, sketch.height / h);
+        console.log("scale: ", scale);
         thresholdSlider = sketch.createSlider(0, 100, sliderInitial);
         thresholdSlider.position(10, 10);
 
@@ -64,87 +96,173 @@ const s = (sketch) => {
         accumulatedImage.loadPixels();
         for (let i = 0; i < accumulatedImage.pixels.length; i++) {
             accumulatedImage.pixels[i] = 255;
+            // console.log("accumulatedImage length: ", accumulatedImage.pixels.length);
         }
         accumulatedImage.updatePixels();
 
+        // setTimeout(sketch.resetImage, timeout);
+    };
 
-
+    sketch.initiateFaceApi = () => {
         for (let socketId in videoElements) {
-            console.log("looping in setup with socketID: ", socketId)
+
+
             const options = {
                 withLandmarks: true,
                 withDescriptors: false,
             };
-            let faceapi = ml5.faceApi(video, options, modelReady(socketId));
+            let faceapi = ml5.faceApi(videoElements[socketId], options, sketch.modelReady(socketId));
             faceapis.set(socketId, faceapi);
         }
-
-
-        setTimeout(sketch.resetImage, timeout);
-    };
+    }
 
     sketch.modelReady = (socketId) => {
-        return function() {
+        return function () {
             console.log(`Model loaded for source ${socketId}`);
-            faceapis.get(socketId).detect(gotResults(socketId));
+            faceapis.get(socketId).detect(sketch.gotResults(socketId));
         }
     };
 
     sketch.gotResults = (socketId) => {
-        return function(err, result) {
+        return function (err, result) {
             if (err) {
                 console.log(err);
                 return;
             }
+            // console.log("Got Results!")
             detections.set(socketId, result);
-            faceapis.get(socketId).detect(gotResults(socketId)); // Continue detecting faces
+            faceapis.get(socketId).detect(sketch.gotResults(socketId)); // Continue detecting faces
         }
     };
 
-sketch.getEyeBoundingBoxes = () => {
-    console.log("getEyeBoundingBoxes")
+    sketch.getEyeBoundingBoxes = (socketId) => {
+        /*
+        detectionsArray is an array, each element is each person detected
+        */
+        // Get the array of detections for the specified socketId
+        let detectionsArray = detections.get(socketId);
 
-    let allEyeBoundingBoxes = new Map(); // Stores bounding boxes for each socket
-    detections.forEach((detectionArray, socketId) => {
-        let eyeBoundingBoxes = [];
-        detectionArray.forEach(detection => {
-            const leftEye = detection.parts.leftEye;
-            const rightEye = detection.parts.rightEye;
 
+        if (detectionsArray && detectionsArray.length > 0) {
+            // Get the first detection in the array
+            let detection = detectionsArray[0];
+
+
+            console.log("detectionsArray",detectionsArray)
+            console.log("detection",detection)
+            // console.log("videoElements[socketId]",videoElements[socketId])
+
+            const scaleX = sketch.width / videoElements[socketId].width;
+            const scaleY = sketch.height / videoElements[socketId].height;
+
+            const box = detection.detection.box;
+            box.x *= scaleX;
+            box.y *= scaleY;
+            box.width *= scaleX;
+            box.height *= scaleY;
+
+            const landmarks = detection.landmarks;
+            landmarks.positions.forEach(position => {
+                position.x *= scaleX;
+                position.y *= scaleY;
+            });
+
+            // console.log("landmarks",landmarks)
+            // console.log("scaleX",scaleX)
+            // console.log("scaleY",scaleY)
+
+
+            if (detection && detection.parts && 'leftEye' in detection.parts && 'rightEye' in detection.parts) {
+                
+                let leftEye = detection.parts.leftEye;
+                let rightEye = detection.parts.rightEye;
+
+            
+                let minX = Math.min(...leftEye.map(point => point.x)) * scaleX;
+                let minY = Math.min(...leftEye.map(point => point.y)) * scaleY;
+                let maxX = Math.max(...leftEye.map(point => point.x)) * scaleX;
+                let maxY = Math.max(...leftEye.map(point => point.y)) * scaleY;
+                let rminX = Math.min(...rightEye.map(point => point.x)) * scaleX;
+                let rminY = Math.min(...rightEye.map(point => point.y)) * scaleY;
+                let rmaxX = Math.max(...rightEye.map(point => point.x)) * scaleX;
+                let rmaxY = Math.max(...rightEye.map(point => point.y)) * scaleY;
+
+                // Return the bounding box as an array
+                return [[minX, minY, maxX, maxY], [rminX, rminY, rmaxX, rmaxY]];
+            } else {
+                console.error('Unable to access leftEye for detection:', detection);
+                return null;
+            }
+        } else {
+            console.log('No detections found for socketId:', socketId);
+            return null;
+        }
+    };
+
+    sketch.getEyeBoundingTestBoxes = (id) => {
+        let allEyeBoundingBoxes; // Stores bounding boxes for each socket
+
+        let finalEyeBoundingBoxes;
+        detections.forEach((detection, socketId) => {
+
+            //added scale stuff
+            // Scale the box coordinates to the full screen size
+            const scaleX = sketch.width / videoElements[socketId].videoWidth;
+            const scaleY = sketch.height / videoElements[socketId].videoHeight;
+            const box = detection.box;
+            box.x *= scaleX;
+            box.y *= scaleY;
+            box.width *= scaleX;
+            box.height *= scaleY;
+
+            // Scale the landmark coordinates to the full screen size
+            const landmarks = detection.landmarks;
+            landmarks.positions.forEach(position => {
+                position.x *= scaleX;
+                position.y *= scaleY;
+            });
+
+            //end of added scale stuff
+
+            let eyeBoundingBoxes = [];
+            console.log("This is socket Id: ", socketId);
+            console.log("This is detection: ", detection);
+            if (detection.length == 0) return
+            // console.log("This is parts: ", detection[0].parts);
+            const leftEye = detection[0].parts.leftEye;
+            const rightEye = detection[0].parts.rightEye;
             // Calculate and store bounding boxes for both eyes
             eyeBoundingBoxes.push(sketch.calculateBoundingBox(leftEye));
             eyeBoundingBoxes.push(sketch.calculateBoundingBox(rightEye));
+            if (id == socketId) allEyeBoundingBoxes = finalEyeBoundingBoxes
         });
-        allEyeBoundingBoxes.set(socketId, eyeBoundingBoxes);
-    });
-    return allEyeBoundingBoxes;
-};
+        return allEyeBoundingBoxes;
+    };
 
 
     sketch.calculateBoundingBox = (eye) => {
-        console.log("calculateBoundingBox")
-        const x1 = min(eye.map(p => p._x));
-        const y1 = min(eye.map(p => p._y));
-        const x2 = max(eye.map(p => p._x));
-        const y2 = max(eye.map(p => p._y));
+        const x1 = Math.min(eye.map(p => p._x));
+        const y1 = Math.min(eye.map(p => p._y));
+        const x2 = Math.max(eye.map(p => p._x));
+        const y2 = Math.max(eye.map(p => p._y));
 
         const width = (x2 - x1) * scale;
         const height = (y2 - y1) * scale;
-        const centerX = (x1 + x2) / 2;
-        const centerY = (y1 + y2) / 2;
+        const centerX = (x1 + x2) / 2 * scale; // Scale the x coordinate
+        const centerY = (y1 + y2) / 2 * scale; // Scale the y coordinate
 
         // Adjust position to keep the box centered around the eye
-        const newX = centerX - width / 2;
-        const newY = centerY - height / 2;
+        var newX = centerX - width / 2;
+        var newY = centerY - height / 2;
 
         // Return scaled and centered bounding box as an object
+        console.log("newX: " + newX + " newY: " + newY + " width: " + width + " height: " + height);
         return { x: newX, y: newY, width: width, height: height };
     };
 
 
     sketch.draw = () => {
-        sketch.background(120);
-
+        // sketch.background(120);
 
         // #region Original - working
         // let clientIndex = 0;
@@ -162,20 +280,24 @@ sketch.getEyeBoundingBoxes = () => {
         // }
         // #endregion
 
-
         for (let socketId in videoElements) {
-            if (socketId !== socket.id) {
+            if (socketId !== socket.id && detections.size > 0) {
                 let capture = videoElements[socketId];
                 capture.loadPixels();
 
-                let eyeBoxes;
-                if (detections.has(socketId) && detections.get(socketId).length > 0) {
-                    console.log("[draw]: detections.has(socketId) && detections.get(socketId).length > 0")
-                    eyeBoxes = sketch.getEyeBoundingBoxes().get(socketId);
+                //added - NEW
+                // accumulatedImage.pixels = sketch.copyImage(capture.pixels, accumulatedImage.pixels);
+                // accumulatedImage.updatePixels();
+                // end of NEW
+
+                let eyeBoxes = [];
+                // console.log("detections: ", detections);
+                // console.log("detections.has(socketId): ",detections.has(socketId));
+                if (detections.has(socketId)) {
+
+                    eyeBoxes = sketch.getEyeBoundingBoxes(socketId)
                 }
-                // console.log("capture.pixels.length: ",capture.pixels.length)
-                // console.log("capture.width: ",capture.width)
-                // console.log("capture.height: ",capture.height)
+
                 if (capture.pixels.length > 0) {
                     if (!previousPixels) {
                         // Copy initial pixels to previousPixels array using copyImage
@@ -184,13 +306,20 @@ sketch.getEyeBoundingBoxes = () => {
                         var cw = capture.width,
                             ch = capture.height;
                         var pixels = capture.pixels;
+                        // sketch.loadPixels();
                         accumulatedImage.loadPixels();
-                        sketch.loadPixels();
                         let thresholdAmount = (thresholdSlider.value() * 255) / 100;
                         thresholdAmount *= 3;
+
+                        // let coord = sketch.getPixelCoordinates(index, cw)
+
+                        // console.log("coord.x: ", coord.x,"  " + "coord.y: + " + coord.y, "  in inside boxes: " + isInsideBoxes)
+                        let isAnyInsideBoxes = false
+
                         for (let y = 0; y < h; y++) {
                             for (let x = 0; x < w; x++) {
                                 var index = (x + y * w) * 4; // Calculate the index for the pixels array
+                                let isInsideBoxes = sketch.isPixelInBoundingBoxes(x, y, eyeBoxes)
                                 let rdiff = Math.abs(pixels[index] - previousPixels[index]);
                                 let gdiff = Math.abs(
                                     pixels[index + 1] - previousPixels[index + 1]
@@ -200,18 +329,14 @@ sketch.getEyeBoundingBoxes = () => {
                                 );
                                 var diffs = rdiff + gdiff + bdiff;
                                 if (diffs > thresholdAmount) {
-                                    let coord = sketch.getPixelCoordinates(index, cw)
-                                    let isInsideBoxes = sketch.isPixelInBoundingBoxes(coord.x, coord.y, eyeBoxes)
-
-
                                     if (isInsideBoxes) {
+                                        isAnyInsideBoxes = true
                                         accumulatedImage.pixels[index] = pixels[index]; // Red channel
                                         accumulatedImage.pixels[index + 1] = pixels[index + 1]; // Green channel
                                         accumulatedImage.pixels[index + 2] = pixels[index + 2]; // Blue channel}
+                                        // console.log("is inside!")
 
                                     } else {
-                                        // accumulatedImage.pixels[index + 3] = 32;
-                                        // pixels[index + 3] -= 20;
                                     }
                                     // Update previousPixels for the next frame
                                     previousPixels[index] = pixels[index];
@@ -219,101 +344,137 @@ sketch.getEyeBoundingBoxes = () => {
                                     previousPixels[index + 2] = pixels[index + 2];
                                 }
                             }
-                            accumulatedImage.updatePixels();
-                            sketch.updatePixels();
-
-                            sketch.image(accumulatedImage, 0, 0, sketch.width, sketch.height);
                         }
 
-                        // sketch.tint(255, 100);
-                        // sketch.image(capture, 0, 0, sketch.width, sketch.height);
+                        console.log("isAnyInsideBoxes?", isAnyInsideBoxes);
+                        accumulatedImage.updatePixels();
+                        // console.log("accumulatedImage.pixels.length end draw: ", accumulatedImage.pixels.length); // 3686400 /4 = 921600, 921600 / 1280 = 720
+                        // sketch.updatePixels();
+
+
+                        sketch.image(accumulatedImage, 0, 0, w, h);
+
+
+                        // sketch.push();
+                        // sketch.tint(255, 64);
+                        // sketch.image(capture, 0, 0, w, h);
+                        // sketch.pop();
+
+
                     }
                 }
-            }
 
-        };
+                console.log('eyeBoxes:', eyeBoxes);
+                if (eyeBoxes && eyeBoxes[0]) {
 
-        sketch.isPixelInBoundingBoxes = (x, y, boxes) => {
-            for (let box of boxes) {
-                if (x >= box.x && x < box.x + box.width && y >= box.y && y < box.y + box.height) {
-                    return true;
+                    sketch.circle(eyeBoxes[0][0], eyeBoxes[0][1], 30);
+                    sketch.text(`Left Eye: (${eyeBoxes[0][0]}, ${eyeBoxes[0][1]})`, eyeBoxes[0][0], eyeBoxes[0][1]);
+                } else {
+                    sketch.circle(sketch.width / 2, sketch.height / 2, 30);
                 }
-            }
-            return false;
-        };
 
-        sketch.getPixelCoordinates = (idx, ncw) => {
-            let n = idx / 4; // Convert the index to account for r, g, b, a components
-            let y = Math.floor(n / ncw); // Use floor to calculate y coordinate
-            let x = n % ncw; // Use modulo to calculate x coordinate
-            return { x, y };
-        };
-
-        sketch.copyImage = (src, dst) => {
-            let n = src.length;
-            if (!dst || dst.length !== n) {
-                dst = new src.constructor(n);
-            }
-            while (n--) {
-                dst[n] = src[n];
-            }
-            return dst;
-        };
-
-        sketch.resetImage = () => {
-            accumulatedImage.loadPixels();
-            for (let i = 0; i < accumulatedImage.pixels.length; i++) {
-                accumulatedImage.pixels[i] = 255; // Red
-                accumulatedImage.pixels[i + 1] = 255; // Green
-                accumulatedImage.pixels[i + 2] = 255; // Blue
-                accumulatedImage.pixels[i + 3] = 100; // Alpha
-            }
-            accumulatedImage.updatePixels();
-            setTimeout(sketch.resetImage, timeout);
-        };
-
-        sketch.receivedStream = (stream, simplePeerWrapper) => {
-            if (simplePeerWrapper.socket_id !== socket.id) {
-                let domElement = document.createElement("VIDEO");
-                domElement.className = "domVideo";
-                domElement.srcObject = stream;
-                document.body.appendChild(domElement);
-
-                let videoEl = new p5.MediaElement(domElement, sketch);
-                // sketch._elements.push(videoEl);
-                videoEl.loadedmetadata = false;
-                // set width and height onload metadata
-                domElement.addEventListener('loadedmetadata', function () {
-                    console.log("loaded metadata");
-                    domElement.play();
-                    videoEl.play();
-
-                    // videoEl = new p5.MediaElement(domElement, sketch);
-                    sketch._elements.push(videoEl);
-
-                    if (domElement.width) {
-                        videoEl.width = domElement.width;
-                        videoEl.height = domElement.height;
-                    } else {
-                        videoEl.width = videoEl.elt.width = domElement.videoWidth;
-                        videoEl.height = videoEl.elt.height = domElement.videoHeight;
-                    }
-                    videoEl.loadedmetadata = true;
-                    videoElements[simplePeerWrapper.socket_id] = videoEl;
-
-
-                    // ADD FACEAPI LOAD HERE?
-
-                });
-
-
-                // videoElements[simplePeerWrapper.socket_id] = videoEl;
             }
         };
+    };
+
+
+    sketch.isPixelInBoundingBoxes = (x, y, boxes) => {
+        // console.log("boxes: " + boxes);
+        if (boxes == undefined) {
+            // console.log("not inside")
+            return false
+        }
+
+        let scaledX = x * scale;
+        let scaledY = y * scale;
+
+        for (let box of boxes) {
+            if (scaledX >= box[0] && scaledX < box[2] && scaledY >= box[1] && scaledY < box[3]) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    sketch.getPixelCoordinates = (idx, ncw) => {
+        let n = idx / 4; // Convert the index to account for r, g, b, a components
+        let y = Math.floor(n / ncw); // Use floor to calculate y coordinate
+        let x = n % ncw; // Use modulo to calculate x coordinate
+        return { x, y };
+    };
+
+    sketch.copyImage = (src, dst) => {
+        let n = src.length;
+        if (!dst || dst.length !== n) {
+            dst = new src.constructor(n);
+        }
+        while (n--) {
+            dst[n] = src[n];
+        }
+        return dst;
+    };
+
+    sketch.resetImage = () => {
+        accumulatedImage.loadPixels();
+        for (let i = 0; i < accumulatedImage.pixels.length; i++) {
+            accumulatedImage.pixels[i] = 255; // Red
+            accumulatedImage.pixels[i + 1] = 255; // Green
+            accumulatedImage.pixels[i + 2] = 255; // Blue
+            accumulatedImage.pixels[i + 3] = 100; // Alpha
+        }
+        accumulatedImage.updatePixels();
+        setTimeout(sketch.resetImage, timeout);
+    };
+
+    sketch.receivedStream = (stream, simplePeerWrapper) => {
+        if (simplePeerWrapper.socket_id !== socket.id) {
+            console.log("receivedStream->simplePeerWrapper.socket_id !== socket.id")
+            let domElement = document.createElement("VIDEO");
+            domElement.className = "domVideo";
+            domElement.srcObject = stream;
+            document.body.appendChild(domElement);
+
+            let videoEl = new p5.MediaElement(domElement, sketch);
+            // sketch._elements.push(videoEl);
+            videoEl.loadedmetadata = false;
+            // set width and height onload metadata
+            domElement.addEventListener('loadedmetadata', function () {
+                console.log("loaded metadata");
+                domElement.play();
+                videoEl.play();
+
+                // videoEl = new p5.MediaElement(domElement, sketch);
+                sketch._elements.push(videoEl);
+
+                if (domElement.width) {
+                    videoEl.width = domElement.width;
+                    videoEl.height = domElement.height;
+                } else {
+                    videoEl.width = videoEl.elt.width = domElement.videoWidth;
+                    videoEl.height = videoEl.elt.height = domElement.videoHeight;
+                }
+                videoEl.loadedmetadata = true;
+                videoElements[simplePeerWrapper.socket_id] = videoEl;
+
+
+                sketch.initiateFaceApi();
+
+                let video = document.getElementById('myVideo');
+                console.log("video width: ", video.videoWidth, "video height: ", video.videoHeight);
+            });
+
+
+            // videoElements[simplePeerWrapper.socket_id] = videoEl;
+        }
 
     };
+
 };
-let myp5 = new p5(s, 'p5sketch');
+
+function initp5() {
+    myp5 = new p5(s, 'p5sketch');
+
+}
 
 function onStreamReceived(stream, simplePeerWrapper) {
     if (myp5) {

@@ -4,8 +4,11 @@
 
 .domVideo{
     display: none;
+    filter: contrast(1.5) saturate(1.5);
 }
 
 canvas{
     border: 1px solid black;
+    filter: contrast(1.5) saturate(1.5);
+
 }

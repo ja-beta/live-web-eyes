@@ -23,13 +23,13 @@ async function initCapture() {
 
     const devices = await navigator.mediaDevices.enumerateDevices();
     const videoDevices = devices.filter(device => device.kind === 'videoinput');
-    const secondVideoDeviceId = videoDevices[0].deviceId;
+    const secondVideoDeviceId = videoDevices[1].deviceId;
     const constraints = {
         video: {
             deviceId: secondVideoDeviceId,
             audio: false,
-            width: 1280,
-            height:720
+            width: 1920,
+            height: 1080
         }
     };
 
@@ -62,8 +62,8 @@ const s = (sketch) => {
     let previousPixels;
     let accumulatedImage;
     let thresholdSlider;
-    let timeout = 50;
-    let sliderInitial = 10;
+    let timeout = 200;
+    let sliderInitial = 3;
 
     // let w = 320; //320
     // let h = 240; // 240
@@ -72,15 +72,40 @@ const s = (sketch) => {
     let detections = new Map(); // Stores detections keyed by socket ID
     let scale;
 
+    let currentCenterX = 0;
+    let currentCenterY = 0;
+    let currentZoom = 1;
+    let zoomAmount = 2;
+    let lerpSpeed = 0.75;
+    let globalMask;
+    let whiteMask;
+
+    // let myCanvas = document.querySelector('canvas');
+    // myCanvas.willReadFrequently = true;
+
     sketch.setup = () => {
         // sketch.frameRate(12);
         // sketch.pixelDensity(1);
-        sketch.createCanvas(w, h);
-        console.log(w, h);
-        sketch.background(200);
+        let canvas = sketch.createCanvas(w, h);
+        canvas.elt.willReadFrequently = true;
+        console.log("canvas: ", canvas.elt.willReadFrequently);
+
+        globalMask = sketch.createGraphics(w, h);
+        globalMask.elt.willReadFrequently = true;
+        console.log("globalMask: ", globalMask.elt.willReadFrequently);
+
+
+        whiteMask = sketch.createGraphics(w, h);
+        whiteMask.elt.willReadFrequently = true;
+        console.log("whiteMask: ", whiteMask.elt.willReadFrequently);
+
+
+        whiteMask.background(255)
+        // console.log(w, h);
+        // sketch.background(255,50);
 
         scale = Math.min(sketch.width / w, sketch.height / h);
-        console.log("scale: ", scale);
+        // console.log("scale: ", scale);
         thresholdSlider = sketch.createSlider(0, 100, sliderInitial);
         thresholdSlider.position(10, 10);
 
@@ -141,8 +166,8 @@ const s = (sketch) => {
             let detection = detectionsArray[0];
 
 
-            console.log("detectionsArray",detectionsArray)
-            console.log("detection",detection)
+            // console.log("detectionsArray", detectionsArray)
+            // console.log("detection", detection)
             // console.log("videoElements[socketId]",videoElements[socketId])
 
             const scaleX = sketch.width / videoElements[socketId].width;
@@ -166,11 +191,11 @@ const s = (sketch) => {
 
 
             if (detection && detection.parts && 'leftEye' in detection.parts && 'rightEye' in detection.parts) {
-                
+
                 let leftEye = detection.parts.leftEye;
                 let rightEye = detection.parts.rightEye;
 
-            
+
                 let minX = Math.min(...leftEye.map(point => point.x)) * scaleX;
                 let minY = Math.min(...leftEye.map(point => point.y)) * scaleY;
                 let maxX = Math.max(...leftEye.map(point => point.x)) * scaleX;
@@ -187,8 +212,210 @@ const s = (sketch) => {
                 return null;
             }
         } else {
-            console.log('No detections found for socketId:', socketId);
+            // console.log('No detections found for socketId:', socketId);
             return null;
+        }
+    };
+    /*NOW TESTING*/sketch.getMultipleEyeBoundingBoxes = (socketId) => {
+        let centerPointsArray = [];
+        let detectionsArray = detections.get(socketId);
+        let isThereAnyEyesDetected = false
+        let minXofCenterPoints = w;
+        let minYofCenterPoints = h;
+        let maxXofCenterPoints = 0;
+        let maxYofCenterPoints = 0;
+        let midXofCenterPoints = 0;
+        let midYofCenterPoints = 0;
+        let grandDistance;
+        if (detectionsArray && detectionsArray.length > 0) {
+            // Get the first detection in the array
+            // let detection = detectionsArray[0];
+
+            detectionsArray.forEach(detection => {
+
+                const scaleX = sketch.width / videoElements[socketId].width;
+                const scaleY = sketch.height / videoElements[socketId].height;
+                const box = detection.detection.box;
+                box.x *= scaleX;
+                box.y *= scaleY;
+                box.width *= scaleX;
+                box.height *= scaleY;
+
+                const landmarks = detection.landmarks;
+                landmarks.positions.forEach(position => {
+                    position.x *= scaleX;
+                    position.y *= scaleY;
+                });
+
+                if (detection && detection.parts && 'leftEye' in detection.parts && 'rightEye' in detection.parts) {
+                    isThereAnyEyesDetected = true
+                    let leftEye = detection.parts.leftEye;
+                    let rightEye = detection.parts.rightEye;
+
+
+                    let minX = Math.min(...leftEye.map(point => point.x)) * scaleX;
+                    let minY = Math.min(...leftEye.map(point => point.y)) * scaleY;
+                    let rmaxX = Math.max(...rightEye.map(point => point.x)) * scaleX;
+                    let rmaxY = Math.max(...rightEye.map(point => point.y)) * scaleY;
+                    let midX = (minX + rmaxX) / 2
+                    let midY = (minY + rmaxY) / 2
+                    let midPoint = sketch.createVector(midX, midY)
+                    centerPointsArray.push(midPoint)
+                    // sketch.circle(midX,midY,10)
+                }
+            })
+            if (isThereAnyEyesDetected) {
+                // centerPointsArray.forEach(midPoint => {
+                // if (midPoint[0] < minXofCenterPoints) minXofCenterPoints = midPoint[0]
+                // if (midPoint[0] > maxXofCenterPoints) maxXofCenterPoints = midPoint[0]
+                // if (midPoint[1] < minYofCenterPoints) minYofCenterPoints = midPoint[1]
+                // if (midPoint[1] > maxYofCenterPoints) maxYofCenterPoints = midPoint[1]
+
+                // })
+
+                minXofCenterPoints = Math.min(...centerPointsArray.map(point => point.x));
+                minYofCenterPoints = Math.min(...centerPointsArray.map(point => point.y));
+                maxXofCenterPoints = Math.max(...centerPointsArray.map(point => point.x));
+                maxYofCenterPoints = Math.max(...centerPointsArray.map(point => point.y));
+
+                midXofCenterPoints = (minXofCenterPoints + maxXofCenterPoints) / 2
+                midYofCenterPoints = (minYofCenterPoints + maxYofCenterPoints) / 2
+                grandDistance = sketch.dist(minXofCenterPoints, minYofCenterPoints, maxXofCenterPoints, maxXofCenterPoints) / 2
+                grandDistance = Math.max((maxXofCenterPoints - minXofCenterPoints), (maxYofCenterPoints - minYofCenterPoints))*zoomAmount
+                // grandDistance = maxXofCenterPoints - minXofCenterPoints;
+
+                if (centerPointsArray.length == 1) {
+                    return [midXofCenterPoints, midYofCenterPoints, 700]
+                } else {
+                    return [midXofCenterPoints, midYofCenterPoints, grandDistance]
+                }
+            } else {
+                return null
+            }
+
+        } else {
+            // console.log('No detections found for socketId:', socketId);
+            return null;
+        }
+    };
+    sketch.drawMask = (socketId) => {
+        let detectionsArray = detections.get(socketId);
+        if (detectionsArray && detectionsArray.length > 0) {
+            // let detection = detectionsArray[0]; //moved everything inside the forEach loop
+
+            detectionsArray.forEach(detection => {
+                const scaleX = sketch.width / videoElements[socketId].width;
+                const scaleY = sketch.height / videoElements[socketId].height;
+
+                // Adjust landmark scaling
+                const landmarks = detection.landmarks;
+                landmarks.positions.forEach(position => {
+                    position.x *= scaleX;
+                    position.y *= scaleY;
+                });
+
+                if (detection && detection.parts && 'leftEye' in detection.parts && 'rightEye' in detection.parts) {
+
+                    globalMask.background(255); // Set background to white
+
+                    globalMask.fill(0);
+
+                    // Draw and fill eye polygons
+                    ['leftEye', 'rightEye'].forEach(eye => {
+                        if (detection.parts[eye] && detection.parts[eye].length > 5) {
+                            let centerEyePoint = sketch.createVector((detection.parts[eye][0].x + detection.parts[eye][3].x) / 2, (detection.parts[eye][0].y + detection.parts[eye][3].y) / 2)
+
+                            globalMask.beginShape();
+
+                            detection.parts[eye].forEach(point => {
+                                let pointLerped = sketch.createVector(point.x, point.y)
+                                pointLerped.lerp(centerEyePoint, -0.9)
+                                globalMask.curveVertex(pointLerped.x * scaleX, pointLerped.y * scaleY);
+                                // globalMaskmask.curveVertex(point.x * scaleX, point.y * scaleY);
+                            });
+                            globalMask.endShape(sketch.CLOSE);
+                        } else {
+                            console.log("wrong with lerping")
+                        }
+                    });
+
+                    // Apply Gaussian blur to the mask
+                    sketch.push();
+                    globalMask.filter(sketch.BLUR, 4);  // Adjust the radius to control the softness
+                    sketch.pop();
+
+                    // Use the mask to filter the original image
+                    // sketch.image(videoElements[socketId], 0, 0);
+                    // sketch.blendMode(sketch.DARKEST);
+                    // sketch.image(globalMask, 0, 0);
+                    // sketch.blendMode(sketch.BLEND);
+
+                    // return globalMask;  
+                    return true
+                } else {
+                    console.error('Unable to access eyes for detection:', detection);
+                    return false;
+                }
+            });
+
+
+        } else if (detectionsArray) {
+            // console.log('detectionsArray exists, but no detections found for socketId:', socketId);
+            return false;
+        } else {
+            // console.log('No detections found for socketId:', socketId);
+            return false;
+        }
+    };
+    /*NOWTESTING*/sketch.drawMultipleEyesMask = (socketId) => {
+        let detectionsArray = detections.get(socketId);
+        let isThereAnyEyesDetected = false
+        if (detectionsArray && detectionsArray.length > 0) {
+            globalMask.background(255);
+            globalMask.fill(0);
+            const scaleX = sketch.width / videoElements[socketId].width;
+            const scaleY = sketch.height / videoElements[socketId].height;
+
+            // let detection = detectionsArray[0];// should be in a for loop
+
+            detectionsArray.forEach(detection => {
+                const landmarks = detection.landmarks;
+                landmarks.positions.forEach(position => {
+                    position.x *= scaleX;
+                    position.y *= scaleY;
+                });
+
+                if (detection && detection.parts && 'leftEye' in detection.parts && 'rightEye' in detection.parts) {
+                    isThereAnyEyesDetected = true;
+                    ['leftEye', 'rightEye'].forEach(eye => {
+                        if (detection.parts[eye] && detection.parts[eye].length > 5) {
+                            let centerEyePoint = sketch.createVector((detection.parts[eye][0].x + detection.parts[eye][3].x) / 2, (detection.parts[eye][0].y + detection.parts[eye][3].y) / 2)
+
+                            globalMask.beginShape();
+
+                            detection.parts[eye].forEach(point => {
+                                let pointLerped = sketch.createVector(point.x, point.y)
+                                pointLerped.lerp(centerEyePoint, -0.9)
+                                globalMask.curveVertex(pointLerped.x * scaleX, pointLerped.y * scaleY);
+                                // globalMaskmask.curveVertex(point.x * scaleX, point.y * scaleY);
+                            });
+                            globalMask.endShape(sketch.CLOSE);
+                        } else {
+                            console.log("wrong with lerping")
+                        }
+                    });
+
+                    sketch.push();
+                    globalMask.filter(sketch.BLUR, 4);  // Adjust the radius to control the softness
+                    sketch.pop();
+                }
+            })
+
+            return isThereAnyEyesDetected
+        } else if (detectionsArray) {
+            return false;
+        } else {
+            return false;
         }
     };
 
@@ -218,8 +445,8 @@ const s = (sketch) => {
             //end of added scale stuff
 
             let eyeBoundingBoxes = [];
-            console.log("This is socket Id: ", socketId);
-            console.log("This is detection: ", detection);
+            // console.log("This is socket Id: ", socketId);
+            // console.log("This is detection: ", detection);
             if (detection.length == 0) return
             // console.log("This is parts: ", detection[0].parts);
             const leftEye = detection[0].parts.leftEye;
@@ -249,13 +476,13 @@ const s = (sketch) => {
         var newY = centerY - height / 2;
 
         // Return scaled and centered bounding box as an object
-        console.log("newX: " + newX + " newY: " + newY + " width: " + width + " height: " + height);
+        // console.log("newX: " + newX + " newY: " + newY + " width: " + width + " height: " + height);
         return { x: newX, y: newY, width: width, height: height };
     };
 
 
     sketch.draw = () => {
-        // sketch.background(120);
+        sketch.background(255);
 
         // #region Original - working
         // let clientIndex = 0;
@@ -276,7 +503,7 @@ const s = (sketch) => {
         for (let socketId in videoElements) {
             if (socketId !== socket.id && detections.size > 0) {
                 let capture = videoElements[socketId];
-                console.log("capture.width: ", capture.width, "capture.height: ", capture.height);
+                // console.log("capture.width: ", capture.width, "capture.height: ", capture.height);
                 capture.loadPixels();
 
                 //added - NEW
@@ -289,7 +516,28 @@ const s = (sketch) => {
                 // console.log("detections.has(socketId): ",detections.has(socketId));
                 if (detections.has(socketId)) {
 
-                    eyeBoxes = sketch.getEyeBoundingBoxes(socketId)
+                    eyeBoxes = sketch.getMultipleEyeBoundingBoxes(socketId)
+                    // if (eyeBoxes) {
+                    //     let targetCenterX = eyeBoxes[0]
+                    //     let targetCenterY = eyeBoxes[1]
+                    //     let targetZoom = eyeBoxes[2] * zoomAmount;
+                    //     sketch.text(targetZoom,targetCenterX,targetCenterY)
+                    //     sketch.fill(255, 0, 0)
+                    //     sketch.circle(targetCenterX, targetCenterY, targetZoom)
+                    //     sketch.fill(0, 255, 0)
+                    //     sketch.circle(targetCenterX, targetCenterY, 30)
+                    // }
+                    if (eyeBoxes) {
+                        let targetCenterX = eyeBoxes[0]
+                        let targetCenterY = eyeBoxes[1]
+                        // let targetZoom = eyeBoxes[2] * zoomAmount;
+                        let targetZoom = eyeBoxes[2];
+                        // sketch.circle(targetCenterX,targetCenterY,30)
+
+                        currentCenterX = sketch.lerp(currentCenterX, targetCenterX, lerpSpeed);
+                        currentCenterY = sketch.lerp(currentCenterY, targetCenterY, lerpSpeed);
+                        currentZoom = sketch.lerp(currentZoom, targetZoom, lerpSpeed);
+                    }
                 }
 
                 if (capture.pixels.length > 0) {
@@ -313,7 +561,8 @@ const s = (sketch) => {
                         for (let y = 0; y < h; y++) {
                             for (let x = 0; x < w; x++) {
                                 var index = (x + y * w) * 4; // Calculate the index for the pixels array
-                                let isInsideBoxes = sketch.isPixelInBoundingBoxes(x, y, eyeBoxes)
+                                // let isInsideBoxes = sketch.isPixelInBoundingBoxes(x, y, eyeBoxes)
+                                let isInsideBoxes = true;
                                 let rdiff = Math.abs(pixels[index] - previousPixels[index]);
                                 let gdiff = Math.abs(
                                     pixels[index + 1] - previousPixels[index + 1]
@@ -340,14 +589,38 @@ const s = (sketch) => {
                             }
                         }
 
-                        console.log("isAnyInsideBoxes?", isAnyInsideBoxes);
+                        // console.log("isAnyInsideBoxes?", isAnyInsideBoxes);
                         accumulatedImage.updatePixels();
                         // console.log("accumulatedImage.pixels.length end draw: ", accumulatedImage.pixels.length); // 3686400 /4 = 921600, 921600 / 1280 = 720
                         // sketch.updatePixels();
 
 
-                        sketch.image(accumulatedImage, 0, 0, w, h);
+                        // sketch.image(accumulatedImage, 0, 0, w, h);
+                        sketch.image(accumulatedImage, 0, 0, w, h, currentCenterX - currentZoom / 2, currentCenterY - (currentZoom / 2) / w * h, currentZoom, currentZoom);
 
+                        let displayMask = sketch.drawMultipleEyesMask(socketId)
+                        let scaleMask = 1;
+                        if (displayMask) {
+                            sketch.blendMode(sketch.LIGHTEST);
+                            // sketch.image(globalMask, 0, 0, w * scaleMask, h * scaleMask);
+                            sketch.image(globalMask, 0, 0, w * scaleMask, h * scaleMask,
+                                (currentCenterX - currentZoom / 2), (currentCenterY - (currentZoom / 2) / w * h), currentZoom * scaleMask, currentZoom * scaleMask);
+                            sketch.blendMode(sketch.BLEND);
+                        } else {
+                            sketch.image(whiteMask, 0, 0, w, h)
+                        }
+
+                        // let mask = sketch.drawMask(socketId)
+                        // let scaleMask = 1;
+                        // if (mask) {
+                        //     sketch.blendMode(sketch.LIGHTEST);
+                        //     sketch.image(mask, 0, 0, w * scaleMask, h * scaleMask,
+                        //         (currentCenterX - currentZoom / 2), (currentCenterY - currentZoom / 2), currentZoom * scaleMask, currentZoom * scaleMask);
+                        //     sketch.blendMode(sketch.BLEND);
+                        // } else {
+
+                        //     sketch.image(whiteMask, 0, 0, w, h)
+                        // }
 
                         // sketch.push();
                         // sketch.tint(255, 64);
@@ -356,6 +629,7 @@ const s = (sketch) => {
 
 
                     }
+
                 }
 
                 // console.log('eyeBoxes:', eyeBoxes);

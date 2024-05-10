@@ -23,7 +23,9 @@ async function initCapture() {
 
     const devices = await navigator.mediaDevices.enumerateDevices();
     const videoDevices = devices.filter(device => device.kind === 'videoinput');
-    const secondVideoDeviceId = videoDevices[1].deviceId;
+    const secondVideoDeviceId = videoDevices[1] ? videoDevices[1].deviceId : videoDevices[0].deviceId;
+
+
     const constraints = {
         video: {
             deviceId: secondVideoDeviceId,
@@ -62,8 +64,11 @@ const s = (sketch) => {
     let previousPixels;
     let accumulatedImage;
     let thresholdSlider;
-    let timeout = 200;
-    let sliderInitial = 3;
+    // let thresholdAmount =1;
+    thresholdSmall = 0;
+    thresholdLarge = 40;
+    let timeout = 150;
+    let sliderInitial = 2;
 
     // let w = 320; //320
     // let h = 240; // 240
@@ -76,7 +81,7 @@ const s = (sketch) => {
     let currentCenterY = 0;
     let currentZoom = 1;
     let zoomAmount = 2;
-    let lerpSpeed = 0.75;
+    let lerpSpeed = 0.5;
     let globalMask;
     let whiteMask;
 
@@ -165,7 +170,6 @@ const s = (sketch) => {
             // Get the first detection in the array
             let detection = detectionsArray[0];
 
-
             // console.log("detectionsArray", detectionsArray)
             // console.log("detection", detection)
             // console.log("videoElements[socketId]",videoElements[socketId])
@@ -205,10 +209,11 @@ const s = (sketch) => {
                 let rmaxX = Math.max(...rightEye.map(point => point.x)) * scaleX;
                 let rmaxY = Math.max(...rightEye.map(point => point.y)) * scaleY;
 
+
                 // Return the bounding box as an array
                 return [[minX, minY, maxX, maxY], [rminX, rminY, rmaxX, rmaxY]];
             } else {
-                console.error('Unable to access leftEye for detection:', detection);
+                console.error('Unable to access eyes for detection:', detection);
                 return null;
             }
         } else {
@@ -281,7 +286,7 @@ const s = (sketch) => {
                 midXofCenterPoints = (minXofCenterPoints + maxXofCenterPoints) / 2
                 midYofCenterPoints = (minYofCenterPoints + maxYofCenterPoints) / 2
                 grandDistance = sketch.dist(minXofCenterPoints, minYofCenterPoints, maxXofCenterPoints, maxXofCenterPoints) / 2
-                grandDistance = Math.max((maxXofCenterPoints - minXofCenterPoints), (maxYofCenterPoints - minYofCenterPoints))*zoomAmount
+                grandDistance = Math.max((maxXofCenterPoints - minXofCenterPoints), (maxYofCenterPoints - minYofCenterPoints)) * zoomAmount
                 // grandDistance = maxXofCenterPoints - minXofCenterPoints;
 
                 if (centerPointsArray.length == 1) {
@@ -351,21 +356,14 @@ const s = (sketch) => {
                     // sketch.blendMode(sketch.BLEND);
 
                     // return globalMask;  
+
                     return true
                 } else {
                     console.error('Unable to access eyes for detection:', detection);
                     return false;
                 }
             });
-
-
-        } else if (detectionsArray) {
-            // console.log('detectionsArray exists, but no detections found for socketId:', socketId);
-            return false;
-        } else {
-            // console.log('No detections found for socketId:', socketId);
-            return false;
-        }
+        } 
     };
     /*NOWTESTING*/sketch.drawMultipleEyesMask = (socketId) => {
         let detectionsArray = detections.get(socketId);
@@ -502,6 +500,13 @@ const s = (sketch) => {
 
         for (let socketId in videoElements) {
             if (socketId !== socket.id && detections.size > 0) {
+                let displayMask = sketch.drawMultipleEyesMask(socketId)
+                if(displayMask){
+                    thresholdSlider.value(thresholdSmall);
+                }else{
+                    thresholdSlider.value(thresholdLarge);
+                }
+
                 let capture = videoElements[socketId];
                 // console.log("capture.width: ", capture.width, "capture.height: ", capture.height);
                 capture.loadPixels();
@@ -551,6 +556,7 @@ const s = (sketch) => {
                         // sketch.loadPixels();
                         accumulatedImage.loadPixels();
                         let thresholdAmount = (thresholdSlider.value() * 255) / 100;
+                        // thresholdAmount = (thresholdAmount * 255) / 100;
                         thresholdAmount *= 3;
 
                         // let coord = sketch.getPixelCoordinates(index, cw)
@@ -598,7 +604,7 @@ const s = (sketch) => {
                         // sketch.image(accumulatedImage, 0, 0, w, h);
                         sketch.image(accumulatedImage, 0, 0, w, h, currentCenterX - currentZoom / 2, currentCenterY - (currentZoom / 2) / w * h, currentZoom, currentZoom);
 
-                        let displayMask = sketch.drawMultipleEyesMask(socketId)
+
                         let scaleMask = 1;
                         if (displayMask) {
                             sketch.blendMode(sketch.LIGHTEST);
@@ -607,7 +613,8 @@ const s = (sketch) => {
                                 (currentCenterX - currentZoom / 2), (currentCenterY - (currentZoom / 2) / w * h), currentZoom * scaleMask, currentZoom * scaleMask);
                             sketch.blendMode(sketch.BLEND);
                         } else {
-                            sketch.image(whiteMask, 0, 0, w, h)
+                            console.log("no mask");
+                            // sketch.image(whiteMask, 0, 0, w, h)
                         }
 
                         // let mask = sketch.drawMask(socketId)
@@ -643,6 +650,9 @@ const s = (sketch) => {
 
             }
         };
+
+        sketch.text(`threshold: ${thresholdSlider.value()}`, 10, 30);
+
     };
 
 
